@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>YAAN Auth Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body{font-family:Arial,sans-serif;background:#f2f2f2;padding:40px}
+    .card{background:#fff;width:360px;padding:20px;border-radius:8px;box-shadow:0 0 10px rgba(0,0,0,.1)}
+    input,button{width:100%;padding:10px;margin-top:10px}
+    button{background:#0066ff;color:#fff;border:none;cursor:pointer}
+    pre{background:#eee;padding:10px;margin-top:10px;font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h3>YAAN Login Test</h3>
+
+    <input id="identifier" placeholder="Email or Phone" />
+    <button id="sendBtn" onclick="sendOtp()">Send OTP</button>
+    <button id="resendBtn" onclick="resendOtp()">Resend OTP</button>
+
+    <input id="otp" placeholder="Enter OTP" />
+    <button id="verifyBtn" onclick="verifyOtp()">Verify OTP</button>
+
+    <pre id="output"></pre>
+  </div>
+
+<script>
+const API = "http://127.0.0.1:5000/api/auth";
+const identifierEl = document.getElementById('identifier');
+const otpEl = document.getElementById('otp');
+const outputEl = document.getElementById('output');
+const sendBtn = document.getElementById('sendBtn');
+const resendBtn = document.getElementById('resendBtn');
+const verifyBtn = document.getElementById('verifyBtn');
+
+function isEmail(v){return v.includes('@')}
+
+async function sendOtp(){
+  const value = identifierEl.value.trim();
+  if(!value) return alert('Enter email or phone');
+  const body = { email: isEmail(value)?value:null, phone: !isEmail(value)?value:null };
+  try{
+    sendBtn.disabled = true; outputEl.textContent = 'Sending...';
+    const res = await fetch(`${API}/request-otp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const json = await res.json().catch(()=>null);
+    if(!res.ok){ outputEl.textContent = JSON.stringify({status:res.status,error:json||res.statusText},null,2); return }
+    outputEl.textContent = JSON.stringify(json,null,2);
+  }catch(err){ outputEl.textContent = JSON.stringify({error:err.message},null,2) }
+  finally{ sendBtn.disabled = false }
+}
+
+async function verifyOtp(){
+  const value = identifierEl.value.trim();
+  const otpValue = otpEl.value.trim();
+  if(!otpValue) return alert('Enter OTP');
+  const body = { otp: otpValue, email: isEmail(value)?value:null, phone: !isEmail(value)?value:null };
+  try{
+    verifyBtn.disabled = true; outputEl.textContent = 'Verifying...';
+    const res = await fetch(`${API}/verify-otp`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const json = await res.json().catch(()=>null);
+    if(!res.ok){ outputEl.textContent = JSON.stringify({status:res.status,error:json||res.statusText},null,2); return }
+    outputEl.textContent = JSON.stringify(json,null,2);
+    // Redirect to Flutter app after successful verification
+    setTimeout(() => window.location.href = 'http://localhost:8080/index.html', 2000);
+  }catch(err){ outputEl.textContent = JSON.stringify({error:err.message},null,2) }
+  finally{ verifyBtn.disabled = false }
+}
+</script>
+</body>
+</html>
