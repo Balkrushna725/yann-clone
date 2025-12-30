@@ -16,10 +16,15 @@ app.get("/", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 
-mongoose
-  .connect(process.env.MONGO_URI || "mongodb://127.0.0.1:27017/yaan-auth")
-  .then(() => console.log("MongoDB connected"))
+// Connect to PostgreSQL
+sequelize.authenticate()
+  .then(() => console.log("PostgreSQL connected"))
   .catch(err => console.log("DB error:", err.message));
+
+// Sync database (create tables if they don't exist)
+sequelize.sync()
+  .then(() => console.log("Database synced"))
+  .catch(err => console.log("Sync error:", err.message));
 
 const PORT = process.env.PORT || 5000;
 let srv;

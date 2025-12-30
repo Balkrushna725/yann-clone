@@ -59,15 +59,15 @@ const User = require('./src/models/User');
 
     console.log('update-profile response:', profileRes.status, profileRes.body);
 
-    const updated = await User.findOne({ email });
+    const updated = await User.findOne({ where: { email } });
     console.log('Updated user document:', { gender: updated.gender, emergencyNumber: updated.emergencyNumber });
 
-    await mongoose.disconnect();
+    await sequelize.close();
     console.log('Smoke test completed successfully');
     process.exit(0);
   } catch (err) {
     console.error('Smoke test failed', err);
-    try { await mongoose.disconnect(); } catch(e){}
+    try { await sequelize.close(); } catch(e){}
     process.exit(2);
   }
 })();

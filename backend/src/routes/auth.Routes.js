@@ -1,5 +1,6 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
+const { Op } = require("sequelize");
 
 // use centralized User model to avoid duplicate schema compilation
 const User = require("../models/User");
@@ -20,10 +21,17 @@ router.post("/request-otp", async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expires = new Date(Date.now() + 5 * 60 * 1000);
 
-    let user = await User.findOne({ $or: [{ email }, { phone }] });
+    let user = await User.findOne({
+      where: {
+        [Op.or]: [
+          { email: email ? email : null },
+          { phone: phone ? phone : null }
+        ]
+      }
+    });
 
     if (!user) {
-      user = new User({ email, phone });
+      user = await User.create({ email, phone });
     }
 
     user.otp = otp;
@@ -79,7 +87,14 @@ router.post("/verify-otp", async (req, res) => {
   try {
     const { email, phone, otp, firstName, lastName } = req.body;
 
-    const user = await User.findOne({ $or: [{ email }, { phone }] });
+    const user = await User.findOne({
+      where: {
+        [Op.or]: [
+          { email: email ? email : null },
+          { phone: phone ? phone : null }
+        ]
+      }
+    });
 
     if (!user || user.otp !== otp) {
       return res.status(400).json({ message: "Invalid OTP" });
@@ -99,7 +114,7 @@ router.post("/verify-otp", async (req, res) => {
     await user.save();
 
     const token = jwt.sign(
-      { userId: user._id },
+      { userId: user.id },
       process.env.JWT_SECRET || "yaan_secret",
       { expiresIn: "7d" }
     );
@@ -129,15 +144,16 @@ router.post('/update-profile', async (req, res) => {
     }
 
     const userId = payload.userId;
-    const { gender, emergencyNumber, firstName, lastName } = req.body;
+    const { gender, emergencyNumber, firstName, lastName, email } = req.body;
 
-    const user = await User.findById(userId);
+    const user = await User.findByPk(userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     if (firstName) user.firstName = firstName;
     if (lastName) user.lastName = lastName;
     if (gender) user.gender = gender;
     if (emergencyNumber) user.emergencyNumber = emergencyNumber;
+    if (email) user.email = email;
 
     await user.save();
 

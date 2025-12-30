@@ -29,7 +29,7 @@ test('request-otp and verify-otp flow', async () => {
   expect(reqRes.body.message).toBe('OTP sent');
 
   // Read OTP from DB
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ where: { email } });
   expect(user).toBeTruthy();
   expect(user.otp).toBeTruthy();
 
