@@ -1,13 +1,26 @@
  require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const mongoose = require("mongoose");
+const sequelize = require("./src/config/database");
 
-const authRoutes = require("./routes/authRoutes");
+const authRoutes = require("./src/routes/auth.Routes");
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    // Allow localhost on any port for development
+    if (origin.match(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true
+}));
 app.use(express.json());
 
 app.get("/", (req, res) => {
@@ -26,7 +39,7 @@ sequelize.sync()
   .then(() => console.log("Database synced"))
   .catch(err => console.log("Sync error:", err.message));
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 let srv;
 if (require.main === module) {
   // bind to IPv4 localhost to avoid localhost/IPv6 resolution issues on Windows

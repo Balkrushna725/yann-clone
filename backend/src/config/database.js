@@ -1,8 +1,7 @@
 const { Sequelize } = require('sequelize');
-require('dotenv').config();
+// require('dotenv').config(); // Commented out to avoid .env override
 
-const sequelize = new Sequelize(process.env.DATABASE_URL || 'postgresql://username:password@localhost:5432/yaan_auth', {
-  dialect: 'postgres',
+const sequelize = new Sequelize('postgresql://postgres:Mayu@1702@localhost:5432/yaan_db', {
   logging: false, // Set to console.log to see SQL queries
 });
 

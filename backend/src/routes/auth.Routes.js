@@ -21,14 +21,10 @@ router.post("/request-otp", async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expires = new Date(Date.now() + 5 * 60 * 1000);
 
-    let user = await User.findOne({
-      where: {
-        [Op.or]: [
-          { email: email ? email : null },
-          { phone: phone ? phone : null }
-        ]
-      }
-    });
+    const where = {};
+    if (email) where.email = email;
+    if (phone) where.phone = phone;
+    let user = await User.findOne({ where });
 
     if (!user) {
       user = await User.create({ email, phone });
@@ -61,10 +57,13 @@ router.post("/resend-otp", async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expires = new Date(Date.now() + 5 * 60 * 1000);
 
-    let user = await User.findOne({ $or: [{ email }, { phone }] });
+    const where = {};
+    if (email) where.email = email;
+    if (phone) where.phone = phone;
+    let user = await User.findOne({ where });
 
     if (!user) {
-      user = new User({ email, phone });
+      user = await User.create({ email, phone });
     }
 
     user.otp = otp;
@@ -87,14 +86,10 @@ router.post("/verify-otp", async (req, res) => {
   try {
     const { email, phone, otp, firstName, lastName } = req.body;
 
-    const user = await User.findOne({
-      where: {
-        [Op.or]: [
-          { email: email ? email : null },
-          { phone: phone ? phone : null }
-        ]
-      }
-    });
+    const where = {};
+    if (email) where.email = email;
+    if (phone) where.phone = phone;
+    const user = await User.findOne({ where });
 
     if (!user || user.otp !== otp) {
       return res.status(400).json({ message: "Invalid OTP" });

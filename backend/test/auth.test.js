@@ -1,20 +1,19 @@
 const request = require('supertest');
-const mongoose = require('mongoose');
-
-// Use a test DB so we don't clash with development data
-process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/yaan-auth-test';
+const sequelize = require('../src/config/database');
+const User = require('../src/models/User');
+const Otp = require('../src/models/Otp.model');
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'yaan_secret_test';
 
 const app = require('../server');
 const User = require('../src/models/User');
 
 beforeAll(async () => {
-  await mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
-  await User.deleteMany({ email: /@example.com$/ });
+  await sequelize.authenticate();
+  await sequelize.sync({ force: true }); // Reset database for tests
 });
 
 afterAll(async () => {
-  await mongoose.disconnect();
+  await sequelize.close();
 });
 
 test('request-otp and verify-otp flow', async () => {

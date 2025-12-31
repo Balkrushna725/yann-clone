@@ -16,19 +16,19 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'YAAN Driver Login',
       theme: ThemeData(primarySwatch: Colors.blue),
-      home: const HomePage(),
+      home: const LoginPage(),
     );
   }
 }
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+class LoginPage extends StatefulWidget {
+  const LoginPage({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<LoginPage> createState() => _LoginPageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _LoginPageState extends State<LoginPage> {
   final TextEditingController _identifier = TextEditingController();
   final TextEditingController _otp = TextEditingController();
   String _output = '';
@@ -143,9 +143,21 @@ class _HomePageState extends State<HomePage> {
                   body: jsonEncode(payload));
 
               final profileData = _safeParse(profileRes.body);
-              setState(() {
-                _output = jsonEncode({'verified': data, 'profileUpdate': profileData});
-              });
+              if (profileRes.statusCode >= 200 && profileRes.statusCode < 300) {
+                // Show success message and navigate to home
+                _showAlert('Login successful!');
+                await Future.delayed(const Duration(seconds: 1)); // Brief delay for user to see message
+                if (mounted) {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (_) => const HomePage()),
+                  );
+                }
+              } else {
+                setState(() {
+                  _output = jsonEncode({'verified': data, 'profileUpdate': profileData});
+                });
+              }
             } else {
               setState(() {
                 _output = jsonEncode({'verified': data, 'note': 'No token to save profile', 'payload': payload});
@@ -157,9 +169,15 @@ class _HomePageState extends State<HomePage> {
             });
           }
         } else {
-          setState(() {
-            _output = jsonEncode({'verified': data, 'note': 'Nothing to update'});
-          });
+          // No profile update needed, still navigate to home
+          _showAlert('Login successful!');
+          await Future.delayed(const Duration(seconds: 1));
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const HomePage()),
+            );
+          }
         }
       } else {
         setState(() {
@@ -379,6 +397,26 @@ class _EmailPageState extends State<EmailPage> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class HomePage extends StatelessWidget {
+  const HomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('YAAN Driver Home'),
+      ),
+      body: const Center(
+        child: Text(
+          'Welcome to YAAN Driver App!\n\nYou are now logged in.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 18),
         ),
       ),
     );

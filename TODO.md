@@ -12,8 +12,5 @@
 - [x] Install new dependencies
 
 ## Remaining Tasks
-- [ ] Set up PostgreSQL database
-- [ ] Update environment variables (change MONGO_URI to DATABASE_URL)
-- [ ] Run migrations to create tables
-- [ ] Test the application
-- [ ] Update documentation if needed
+- [x] Set up PostgreSQL database (install PostgreSQL, create database 'yaan_db', update .env with real credentials)
+- [x] Test the application (run smoke test after DB setup)

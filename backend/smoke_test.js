@@ -1,19 +1,22 @@
 const request = require('supertest');
-const mongoose = require('mongoose');
-
-process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/yaan-auth';
+const sequelize = require('./src/config/database');
 
 const app = require('./server');
 const User = require('./src/models/User');
 
 (async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+    await sequelize.authenticate();
+    console.log('PostgreSQL connected');
+
+    // Sync models to create tables
+    await sequelize.sync({ force: false });
+    console.log('Database synced');
 
     const email = `smoketest+${Date.now()}@example.com`;
 
     // Clean previous
-    await User.deleteMany({ email });
+    await User.destroy({ where: { email } });
 
     // Intercept console logs to capture the printed OTP
     let capturedOtp = null;
@@ -60,7 +63,11 @@ const User = require('./src/models/User');
     console.log('update-profile response:', profileRes.status, profileRes.body);
 
     const updated = await User.findOne({ where: { email } });
-    console.log('Updated user document:', { gender: updated.gender, emergencyNumber: updated.emergencyNumber });
+    if (updated) {
+      console.log('Updated user document:', { gender: updated.gender, emergencyNumber: updated.emergencyNumber });
+    } else {
+      console.log('User not found after update');
+    }
 
     await sequelize.close();
     console.log('Smoke test completed successfully');
