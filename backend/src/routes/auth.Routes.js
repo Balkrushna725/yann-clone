@@ -1,150 +1,226 @@
+const authMiddleware = require("../middleware/auth.middleware");
+
+
+
+
 const express = require("express");
 const jwt = require("jsonwebtoken");
-
-// use centralized User model to avoid duplicate schema compilation
-const User = require("../models/User");
+const pool = require("../utils/postgres");
 
 const router = express.Router();
 
-/* Using shared User model (src/models/User.js) */
+// ======================
+// HELPERS
+// ======================
+const isValidPhone = (phone) => /^\d{10}$/.test(phone);
+const isValidEmail = (email) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-/* ---------------- STEP 1: REQUEST OTP ---------------- */
+// ======================
+// REQUEST OTP
+// ======================
 router.post("/request-otp", async (req, res) => {
   try {
-    const { email, phone } = req.body;
+    const { phone, email } = req.body;
 
-    if (!email && !phone) {
-      return res.status(400).json({ message: "Email or phone required" });
+    // 🔐 Input validation
+    if (!phone && !email) {
+      return res.status(400).json({
+        success: false,
+        message: "Phone or email is required",
+        data: null
+      });
+    }
+
+    if (phone && !isValidPhone(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid phone number",
+        data: null
+      });
+    }
+
+    if (email && !isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid email format",
+        data: null
+      });
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expires = new Date(Date.now() + 5 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 min
 
-    let user = await User.findOne({ $or: [{ email }, { phone }] });
+    // Delete old OTP
+    await pool.query(
+      `DELETE FROM otp_verification WHERE phone = $1 OR email = $2`,
+      [phone || null, email || null]
+    );
 
-    if (!user) {
-      user = new User({ email, phone });
-    }
+    // Insert new OTP
+    await pool.query(
+      `INSERT INTO otp_verification (phone, email, otp_code, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [phone || null, email || null, otp, expiresAt]
+    );
 
-    user.otp = otp;
-    user.otpExpiresAt = expires;
-    await user.save();
+    // Check user exists
+    const userResult = await pool.query(
+      `SELECT user_id FROM users WHERE phone = $1 OR email = $2`,
+      [phone || null, email || null]
+    );
 
-    console.log("YAAN OTP:", otp); // testing only
+    console.log("DEV OTP:", otp);
 
-    res.json({
+    return res.status(200).json({
+      success: true,
       message: "OTP sent",
-      isNewUser: !user.firstName
+      data: {
+        isNewUser: userResult.rows.length === 0
+      }
     });
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
+
+  } catch (error) {
+    console.error("REQUEST OTP ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      data: null
+    });
   }
 });
 
-/* ---------------- STEP 1.5: RESEND OTP ---------------- */
-router.post("/resend-otp", async (req, res) => {
-  try {
-    const { email, phone } = req.body;
-
-    if (!email && !phone) {
-      return res.status(400).json({ message: "Email or phone required" });
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expires = new Date(Date.now() + 5 * 60 * 1000);
-
-    let user = await User.findOne({ $or: [{ email }, { phone }] });
-
-    if (!user) {
-      user = new User({ email, phone });
-    }
-
-    user.otp = otp;
-    user.otpExpiresAt = expires;
-    await user.save();
-
-    console.log("YAAN OTP:", otp); // testing only
-
-    res.json({
-      message: "OTP resent",
-      isNewUser: !user.firstName
-    });
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-/* ---------------- STEP 2: VERIFY OTP + NAME ---------------- */
+// ======================
+// VERIFY OTP
+// ======================
 router.post("/verify-otp", async (req, res) => {
   try {
-    const { email, phone, otp, firstName, lastName } = req.body;
+    const { phone, email, otp, full_name } = req.body;
 
-    const user = await User.findOne({ $or: [{ email }, { phone }] });
-
-    if (!user || user.otp !== otp) {
-      return res.status(400).json({ message: "Invalid OTP" });
+    // 🔐 Input validation
+    if (!phone && !email) {
+      return res.status(400).json({
+        success: false,
+        message: "Phone or email required",
+        data: null
+      });
     }
 
-    if (user.otpExpiresAt < new Date()) {
-      return res.status(400).json({ message: "OTP expired" });
+    if (phone && !isValidPhone(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid phone number",
+        data: null
+      });
     }
 
-    if (!user.firstName && firstName) {
-      user.firstName = firstName;
-      user.lastName = lastName;
+    if (email && !isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid email format",
+        data: null
+      });
     }
 
-    user.otp = null;
-    user.otpExpiresAt = null;
-    await user.save();
+    if (!otp || !/^\d{6}$/.test(otp)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid 6-digit OTP required",
+        data: null
+      });
+    }
 
+    // Fetch OTP
+    const otpResult = await pool.query(
+      `SELECT * FROM otp_verification
+       WHERE otp_code = $3 AND (phone = $1 OR email = $2)`,
+      [phone || null, email || null, otp]
+    );
+
+    if (otpResult.rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP",
+        data: null
+      });
+    }
+
+    // ⏱ OTP expiry
+    if (new Date(otpResult.rows[0].expires_at) < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP expired",
+        data: null
+      });
+    }
+
+    // Find user
+    let userResult = await pool.query(
+      `SELECT * FROM users WHERE phone = $1 OR email = $2`,
+      [phone || null, email || null]
+    );
+
+    // Create user if not exists
+    if (userResult.rows.length === 0) {
+      userResult = await pool.query(
+        `INSERT INTO users (phone, email, full_name, created_at)
+         VALUES ($1, $2, $3, NOW())
+         RETURNING *`,
+        [phone || null, email || null, full_name || null]
+      );
+    }
+
+    const user = userResult.rows[0];
+
+    // Delete OTP
+    await pool.query(
+      `DELETE FROM otp_verification WHERE phone = $1 OR email = $2`,
+      [phone || null, email || null]
+    );
+
+    // JWT token
     const token = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET || "yaan_secret",
+      { userId: user.user_id },
+      process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
 
-    res.json({
+    return res.status(200).json({
+      success: true,
       message: "Login successful",
-      token,
-      user
+      data: {
+        token,
+        user
+      }
+    });
+
+  } catch (error) {
+    console.error("VERIFY OTP ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      data: null
+    });
+  }
+});
+router.get("/profile", authMiddleware, async (req, res) => {
+  try {
+    return res.status(200).json({
+      success: true,
+      message: "Profile fetched",
+      data: {
+        userId: req.user.userId
+      }
     });
   } catch (err) {
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      data: null
+    });
   }
 });
 
-/* ---------------- STEP 3: UPDATE PROFILE (GENDER / EMERGENCY) ---------------- */
-router.post('/update-profile', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-    if (!token) return res.status(401).json({ message: 'No token provided' });
-
-    let payload;
-    try {
-      payload = jwt.verify(token, process.env.JWT_SECRET || 'yaan_secret');
-    } catch (e) {
-      return res.status(401).json({ message: 'Invalid token' });
-    }
-
-    const userId = payload.userId;
-    const { gender, emergencyNumber, firstName, lastName } = req.body;
-
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    if (firstName) user.firstName = firstName;
-    if (lastName) user.lastName = lastName;
-    if (gender) user.gender = gender;
-    if (emergencyNumber) user.emergencyNumber = emergencyNumber;
-
-    await user.save();
-
-    res.json({ message: 'Profile updated', user });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
 
 module.exports = router;
+
