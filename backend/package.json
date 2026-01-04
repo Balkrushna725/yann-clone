@@ -1,26 +1,35 @@
 {
-  "name": "backend",
+  "name": "yann-cab-booking",
   "version": "1.0.0",
-  "description": "YAAN Backend",
-  "main": "server.js",
+  "description": "YANN Cab Booking API Service",
+  "main": "app.js",
   "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js",
-    "test": "jest --runInBand"
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.{js,json,md}\""
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "cab",
+    "booking",
+    "api",
+    "express",
+    "postgresql"
+  ],
+  "author": "YANN Team",
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
-    "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3",
-    "pg": "^8.16.3"
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "pg": "^8.8.0"
   },
   "devDependencies": {
-    "jest": "^29.0.0",
-    "nodemon": "^3.1.11",
-    "supertest": "^6.3.0"
-  }
+    "eslint": "^8.28.0",
+    "eslint-config-prettier": "^8.5.0",
+    "nodemon": "^2.0.20",
+    "prettier": "^2.8.0"
+  },
+  "type": "commonjs"
 }
