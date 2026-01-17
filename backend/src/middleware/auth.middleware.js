@@ -45,36 +45,65 @@
 // };
 
 // module.exports = authMiddleware;
-const jwt = require("jsonwebtoken");
+const { verifyToken } = require('../config/jwt');
 
 const authMiddleware = (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    const authHeader = req.headers.authorization || '';
 
-    // ❌ No token
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         success: false,
-        message: "Access denied. Token missing"
+        message: 'Access denied. Authorization token missing',
       });
     }
 
-    const token = authHeader.split(" ")[1];
+    const token = authHeader.split(' ')[1];
 
-    // ✅ Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. Invalid token format',
+      });
+    }
 
-    // attach user to request
+    const decoded = verifyToken(token);
+
+    if (!decoded || !decoded.user_id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. Invalid token payload',
+      });
+    }
+
     req.user = decoded;
-
-    next(); // allow request
-
+    next();
   } catch (error) {
     return res.status(401).json({
       success: false,
-      message: "Invalid or expired token"
+      message: 'Invalid or expired token',
     });
   }
 };
 
-module.exports = authMiddleware;
+const authorizeRoles = (...allowedRoles) => (req, res, next) => {
+  if (!allowedRoles.length) {
+    return next();
+  }
+
+  const { user } = req;
+
+  if (!user || !user.role || !allowedRoles.includes(user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Forbidden. Insufficient permissions',
+    });
+  }
+
+  next();
+};
+
+module.exports = {
+  authMiddleware,
+  authorizeRoles,
+};
