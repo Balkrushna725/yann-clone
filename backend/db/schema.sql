@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS drivers (
   driver_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   full_name VARCHAR(120),
   phone VARCHAR(20) UNIQUE NOT NULL,
+  email VARCHAR(255),
   is_available BOOLEAN NOT NULL DEFAULT TRUE,
+  is_verified BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -60,6 +62,15 @@ CREATE TABLE IF NOT EXISTS login_otps (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS otp_verification (
+  otp_id SERIAL PRIMARY KEY,
+  phone VARCHAR(20) NOT NULL,
+  otp_hash TEXT NOT NULL,
+  user_type VARCHAR(10) NOT NULL CHECK (user_type IN ('user', 'driver')),
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Emergency contacts stored for riders, enforced for female riders
 CREATE TABLE IF NOT EXISTS emergency_contacts (
   contact_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -82,9 +93,11 @@ CREATE TABLE IF NOT EXISTS ride_live_locations (
 -- Supporting indexes for common lookup patterns
 CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
 CREATE INDEX IF NOT EXISTS idx_drivers_phone ON drivers(phone);
+CREATE INDEX IF NOT EXISTS idx_drivers_email ON drivers(email);
 CREATE INDEX IF NOT EXISTS idx_cab_bookings_user ON cab_bookings(user_id);
 CREATE INDEX IF NOT EXISTS idx_cab_bookings_driver ON cab_bookings(driver_id);
 CREATE INDEX IF NOT EXISTS idx_cab_bookings_status ON cab_bookings(status);
 CREATE INDEX IF NOT EXISTS idx_login_otps_phone_role ON login_otps(phone, role);
 CREATE INDEX IF NOT EXISTS idx_emergency_contacts_user ON emergency_contacts(user_id);
 CREATE INDEX IF NOT EXISTS idx_live_locations_booking ON ride_live_locations(cab_booking_id, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_otp_verification_phone_type ON otp_verification(phone, user_type);

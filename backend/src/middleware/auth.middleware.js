@@ -103,7 +103,20 @@ const authorizeRoles = (...allowedRoles) => (req, res, next) => {
   next();
 };
 
+const driverOnlyMiddleware = (req, res, next) =>
+  authMiddleware(req, res, () => {
+    if (req.user?.role !== 'driver') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden. Driver access required',
+      });
+    }
+
+    return next();
+  });
+
 module.exports = {
   authMiddleware,
   authorizeRoles,
+  driverOnlyMiddleware,
 };

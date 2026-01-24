@@ -3,6 +3,7 @@ const cors = require('cors');
 
 const { authMiddleware } = require('./middleware/auth.middleware');
 const authRoutes = require('./routes/auth.Routes');
+const driverAuthRoutes = require('./routes/driverAuth.routes');
 const cabRoutes = require('./routes/cab.routes');
 
 const app = express();
@@ -18,6 +19,7 @@ app.get('/', (req, res) => {
 });
 
 app.use('/auth', authRoutes);
+app.use('/driver', driverAuthRoutes);
 app.use('/cab', authMiddleware, cabRoutes);
 
 app.use((req, res) => {

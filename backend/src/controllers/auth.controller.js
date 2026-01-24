@@ -7,12 +7,9 @@ const {
   verifyOtpHash,
   OTP_EXPIRY_MINUTES,
 } = require('../utils/otp.util');
+const { normalisePhone, validatePhone } = require('../utils/phone.util');
 
-const SUPPORTED_ROLES = ['user', 'driver'];
-
-const normalisePhone = (phone) => phone.replace(/\s+/g, '').trim();
-
-const validatePhone = (phone) => /^\+?[1-9]\d{7,14}$/.test(phone);
+const USER_ROLE = 'user';
 
 const buildEmergencyContacts = (contacts) => {
   if (!Array.isArray(contacts)) {
@@ -30,19 +27,12 @@ const buildEmergencyContacts = (contacts) => {
 
 exports.requestOtp = async (req, res) => {
   try {
-    const { phone, role = 'user' } = req.body;
+    const { phone } = req.body;
 
     if (!phone || !validatePhone(phone)) {
       return res.status(400).json({
         success: false,
         message: 'A valid phone number is required',
-      });
-    }
-
-    if (!SUPPORTED_ROLES.includes(role)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid role supplied',
       });
     }
 
@@ -54,21 +44,19 @@ exports.requestOtp = async (req, res) => {
 
     await db.query(
       `DELETE FROM login_otps WHERE phone = $1 AND role = $2`,
-      [normalisedPhone, role]
+      [normalisedPhone, USER_ROLE]
     );
 
     await db.query(
       `INSERT INTO login_otps (login_otp_id, phone, role, otp_hash, expires_at)
        VALUES ($1, $2, $3, $4, $5)`,
-      [uuidv4(), normalisedPhone, role, hashedOtp, expiresAt]
+      [uuidv4(), normalisedPhone, USER_ROLE, hashedOtp, expiresAt]
     );
 
-    const accountQuery =
-      role === 'user'
-        ? `SELECT user_id FROM users WHERE phone = $1`
-        : `SELECT driver_id FROM drivers WHERE phone = $1`;
-
-    const accountResult = await db.query(accountQuery, [normalisedPhone]);
+    const accountResult = await db.query(
+      `SELECT user_id FROM users WHERE phone = $1`,
+      [normalisedPhone]
+    );
     const isNewAccount = accountResult.rowCount === 0;
 
     return res.status(200).json({
@@ -95,7 +83,6 @@ exports.verifyOtp = async (req, res) => {
   try {
     const {
       phone,
-      role = 'user',
       otp,
       full_name,
       gender,
@@ -106,13 +93,6 @@ exports.verifyOtp = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'A valid phone number is required',
-      });
-    }
-
-    if (!SUPPORTED_ROLES.includes(role)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid role supplied',
       });
     }
 
@@ -131,7 +111,7 @@ exports.verifyOtp = async (req, res) => {
        WHERE phone = $1 AND role = $2
        ORDER BY created_at DESC
        LIMIT 1`,
-      [normalisedPhone, role]
+      [normalisedPhone, USER_ROLE]
     );
 
     if (otpResult.rowCount === 0) {
@@ -163,149 +143,113 @@ exports.verifyOtp = async (req, res) => {
 
     let account;
 
-    if (role === 'user') {
-      const cleanedContacts = buildEmergencyContacts(emergencyContacts);
-      let emergencyContactsSnapshot = [];
+    const cleanedContacts = buildEmergencyContacts(emergencyContacts);
+    let emergencyContactsSnapshot = [];
 
-      const userResult = await client.query(
-        `SELECT user_id, full_name, gender
-         FROM users
-         WHERE phone = $1`,
-        [normalisedPhone]
+    const userResult = await client.query(
+      `SELECT user_id, full_name, gender
+       FROM users
+       WHERE phone = $1`,
+      [normalisedPhone]
+    );
+
+    if (userResult.rowCount === 0) {
+      const insertResult = await client.query(
+        `INSERT INTO users (user_id, phone, full_name, gender)
+         VALUES ($1, $2, $3, $4)
+         RETURNING user_id, full_name, gender`,
+        [uuidv4(), normalisedPhone, full_name || null, gender || null]
       );
 
-      if (userResult.rowCount === 0) {
-        const insertResult = await client.query(
-          `INSERT INTO users (user_id, phone, full_name, gender)
-           VALUES ($1, $2, $3, $4)
-           RETURNING user_id, full_name, gender`,
-          [uuidv4(), normalisedPhone, full_name || null, gender || null]
-        );
+      account = insertResult.rows[0];
+    } else {
+      const existing = userResult.rows[0];
+      const nextGender = gender || existing.gender;
+      const nextFullName = full_name || existing.full_name;
 
-        account = insertResult.rows[0];
-      } else {
-        const existing = userResult.rows[0];
-        const nextGender = gender || existing.gender;
-        const nextFullName = full_name || existing.full_name;
+      const updateResult = await client.query(
+        `UPDATE users
+         SET full_name = $2,
+             gender = $3,
+             updated_at = NOW()
+         WHERE user_id = $1
+         RETURNING user_id, full_name, gender`,
+        [existing.user_id, nextFullName, nextGender]
+      );
 
-        const updateResult = await client.query(
-          `UPDATE users
-           SET full_name = $2,
-               gender = $3,
-               updated_at = NOW()
-           WHERE user_id = $1
-           RETURNING user_id, full_name, gender`,
-          [existing.user_id, nextFullName, nextGender]
-        );
+      account = updateResult.rows[0];
+    }
 
-        account = updateResult.rows[0];
-      }
+    const effectiveGender = account.gender ? account.gender.toLowerCase() : null;
 
-      const effectiveGender = account.gender ? account.gender.toLowerCase() : null;
+    if (effectiveGender === 'female') {
+      const existingContactsResult = await client.query(
+        `SELECT contact_id, name, phone, relation
+         FROM emergency_contacts
+         WHERE user_id = $1`,
+        [account.user_id]
+      );
 
-      if (effectiveGender === 'female') {
-        const existingContactsResult = await client.query(
-          `SELECT contact_id, name, phone, relation
-           FROM emergency_contacts
-           WHERE user_id = $1`,
+      const existingContacts = existingContactsResult.rows;
+
+      if (cleanedContacts.length > 0) {
+        await client.query(
+          `DELETE FROM emergency_contacts WHERE user_id = $1`,
           [account.user_id]
         );
 
-        const existingContacts = existingContactsResult.rows;
-
         if (cleanedContacts.length > 0) {
-          await client.query(
-            `DELETE FROM emergency_contacts WHERE user_id = $1`,
-            [account.user_id]
+          const insertResults = await Promise.all(
+            cleanedContacts.map((contact) =>
+              client.query(
+                `INSERT INTO emergency_contacts (contact_id, user_id, name, phone, relation)
+                 VALUES ($1, $2, $3, $4, $5)
+                 RETURNING contact_id, name, phone, relation`,
+                [uuidv4(), account.user_id, contact.name, contact.phone, contact.relation]
+              )
+            )
           );
 
-          if (cleanedContacts.length > 0) {
-            const insertResults = await Promise.all(
-              cleanedContacts.map((contact) =>
-                client.query(
-                  `INSERT INTO emergency_contacts (contact_id, user_id, name, phone, relation)
-                   VALUES ($1, $2, $3, $4, $5)
-                   RETURNING contact_id, name, phone, relation`,
-                  [uuidv4(), account.user_id, contact.name, contact.phone, contact.relation]
-                )
-              )
-            );
-
-            emergencyContactsSnapshot = insertResults.map((result) => result.rows[0]);
-          }
-        } else {
-          emergencyContactsSnapshot = existingContacts;
+          emergencyContactsSnapshot = insertResults.map((result) => result.rows[0]);
         }
-
-        if (emergencyContactsSnapshot.length === 0) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({
-            success: false,
-            message: 'Female users must provide emergency contacts',
-          });
-        }
-
-        account.emergency_contacts = emergencyContactsSnapshot;
-      }
-
-      account.role = 'user';
-    } else {
-      const driverResult = await client.query(
-        `SELECT driver_id, full_name, is_available
-         FROM drivers
-         WHERE phone = $1`,
-        [normalisedPhone]
-      );
-
-      if (driverResult.rowCount === 0) {
-        const insertDriver = await client.query(
-          `INSERT INTO drivers (driver_id, phone, full_name, is_available)
-           VALUES ($1, $2, $3, true)
-           RETURNING driver_id, full_name, is_available`,
-          [uuidv4(), normalisedPhone, full_name || null]
-        );
-
-        account = insertDriver.rows[0];
       } else {
-        const existingDriver = driverResult.rows[0];
-
-        const updateDriver = await client.query(
-          `UPDATE drivers
-           SET full_name = COALESCE($2, full_name),
-               updated_at = NOW()
-           WHERE driver_id = $1
-           RETURNING driver_id, full_name, is_available`,
-          [existingDriver.driver_id, full_name || null]
-        );
-
-        account = updateDriver.rows[0];
+        emergencyContactsSnapshot = existingContacts;
       }
 
-      account.role = 'driver';
+      if (emergencyContactsSnapshot.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'Female users must provide emergency contacts',
+        });
+      }
+
+      account.emergency_contacts = emergencyContactsSnapshot;
     }
 
     await client.query(
       `DELETE FROM login_otps WHERE phone = $1 AND role = $2`,
-      [normalisedPhone, role]
+      [normalisedPhone, USER_ROLE]
     );
 
     await client.query('COMMIT');
 
     const payload = {
-      user_id: role === 'user' ? account.user_id : account.driver_id,
-      role,
+      id: account.user_id,
+      user_id: account.user_id,
+      role: USER_ROLE,
     };
 
     const token = signToken(payload);
 
     const profile = {
-      id: payload.user_id,
+      id: payload.id,
       full_name: account.full_name,
       phone: normalisedPhone,
-      role,
+      role: USER_ROLE,
     };
 
-    if (role === 'user' && Array.isArray(account.emergency_contacts)) {
+    if (Array.isArray(account.emergency_contacts)) {
       profile.emergency_contacts = account.emergency_contacts.map((contact) => ({
         name: contact.name,
         phone: contact.phone,
